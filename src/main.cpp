@@ -20,6 +20,8 @@
  * SOFTWARE.
  */
 
+#include <stdlib.h>
+#include <cstring>
 #include <signal.h>
 #include <stdio.h>
 #include <exception>
@@ -37,7 +39,7 @@ int main() {
 		sigintGot = true;
 	});
 
-	Bot bot("208470176:AAFQcRpDdcDIOQFNf5zkYGjy-RJLb46QNGA");
+	Bot bot(getenv("TOKEN"));
 	bot.getEvents().onCommand("start", [&bot](Message::Ptr message) {
 		bot.getApi().sendMessage(message->chat->id, "Hi!");
 	});
