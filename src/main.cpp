@@ -1,68 +1,185 @@
-/*
- * Copyright (c) 2015 Oleg Morozenkov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
-#include <stdlib.h>
-#include <cstring>
+#include <new>
+#include <mish.h>
 #include <signal.h>
 #include <stdio.h>
 #include <exception>
+#include <iostream>
 
 #include <tgbot/tgbot.h>
+#include <syscalls.h>
+#include <optionparser.h>
 
 using namespace std;
 using namespace TgBot;
+using namespace mish;
 
 bool sigintGot = false;
 
-int main() {
+namespace feta {
+
+void crash(String message) {
+	std::cerr << "[CRASH] " << message << std::endl;
+	unregisterSyscalls();
+	exit(1);
+}
+
+void log(String message) {
+	std::cout << "[NORMAL] " << message << std::endl;
+}
+
+void fault(String message) {
+	std::cerr << "[FAULT] " << message << std::endl;
+}
+
+void debugPrint(String message) {
+	std::cout << message;
+}
+
+}
+
+namespace fetaimpl {
+
+void* malloc(feta::size size) {
+	return ::malloc(size);
+}
+
+void free(void* thing) {
+	::free(thing);
+}
+
+}
+
+static option::ArgStatus MandatoryOption(const option::Option& option, bool) {
+	if (option.arg) {
+		return option::ARG_OK;
+	} else {
+		return option::ARG_IGNORE;
+	}
+}
+
+enum optionIndex {
+	UNKNOWN, HELP, TOKEN, TOKEN_ENV
+#ifdef ALLOW_TEST
+	,TEST
+#endif
+}	;
+const option::Descriptor usage[] =
+		{
+
+				{ UNKNOWN, 0, "", "", option::Arg::None,
+						"USAGE: mishbot --token=<token>|--token-env [options]\n\n" "Options:" },
+
+				{ HELP, 0, "h", "help", option::Arg::None,
+						"  --help, -h  \tPrint usage and exit." },
+
+				{ TOKEN, 0, "t", "token", MandatoryOption,
+						"  --token, -c  \tSpecify the bot token." },
+
+				{ TOKEN_ENV, 0, "e", "token-env", option::Arg::None,
+						"  --token-env, -e  \tUse the TOKEN environment variable as the token." },
+
+#ifdef ALLOW_TEST
+				{	TEST, 0, "t", "test", option::Arg::None, " --test, -c  \tRun tests."},
+#endif
+
+				{ 0, 0, 0, 0, 0, 0 }
+
+		};
+
+Bot* bot;
+Message::Ptr currentMessage;
+
+int main(int argc, char* argv[]) {
+	// parse options
+	argc -= (argc > 0);
+	argv += (argc > 0); // skip program name argv[0] if present
+	option::Stats stats(usage, argc, argv);
+	option::Option options[stats.options_max], buffer[stats.buffer_max];
+	option::Parser parse(usage, argc, argv, options, buffer);
+
+	if (parse.error()) {
+		return 1;
+	}
+
+	// print help if necessary
+	if (options[HELP]) {
+		option::printUsage(std::cout, usage);
+		return 0;
+	}
+
+	if (options[TOKEN]) {
+		String token = options[TOKEN].arg;
+		if (token == NULL) {
+			cerr << "Missing token." << endl;
+			exit(1);
+		}
+		bot = new Bot(token);
+	} else if (options[TOKEN_ENV]) {
+		String env = getenv("TOKEN");
+		if (env == NULL) {
+			cerr << "Missing TOKEN environement variable." << endl;
+			exit(1);
+		}
+		bot = new Bot(env);
+	} else {
+		cerr << "Missing either --token or --token-env option." << endl;
+		exit(1);
+	}
+
+	registerSyscalls();
 	signal(SIGINT, [](int s) {
-		printf("SIGINT got");
+		UNUSED(s);
+		if(sigintGot) {
+			unregisterSyscalls();
+			exit(1);
+		}
+		cout << "stopping..." << endl;
+		cout << "do it again to force stop" << endl;
 		sigintGot = true;
 	});
 
-	Bot bot(getenv("TOKEN"));
-	bot.getEvents().onCommand("start", [&bot](Message::Ptr message) {
-		bot.getApi().sendMessage(message->chat->id, "Hi!");
-	});
-	bot.getEvents().onAnyMessage([&bot](Message::Ptr message) {
-		printf("User wrote %s\n", message->text.c_str());
-		if (StringTools::startsWith(message->text, "/start")) {
-			return;
-		}
-		bot.getApi().sendMessage(message->chat->id, "Your message is: " + message->text);
-	});
+	bot->getEvents().onCommand("start",
+			[](Message::Ptr message) {
+				bot->getApi().sendMessage(message->chat->id, "Hello! You can run Mish code like so:\n`/mish <code>`");
+			});
+	bot->getEvents().onCommand("mish",
+			[](Message::Ptr message) {
+				uinteger pos = message->text.find(" ");
+				if(pos == string::npos) {
+					bot->getApi().sendMessage(message->chat->id, "You didn't send any code!");
+					return;
+				}
+
+				// FIXME joining these lines will cause problems
+				string messageCode = message->text.substr(pos);
+				String sourceCode = messageCode.c_str();
+
+				Code* code = compile::compile(sourceCode);
+				if(code != NULL) {
+					currentMessage = message;
+					execute::execute(code);
+					delete code;
+				}
+			});
 
 	try {
-		printf("Bot username: %s\n", bot.getApi().getMe()->username.c_str());
+		cout << "Started bot with username: "
+				<< bot->getApi().getMe()->username.c_str() << endl;
 
-		TgLongPoll longPoll(bot);
+		TgLongPoll longPoll(*bot);
 		while (!sigintGot) {
-			printf("Long poll started\n");
 			longPoll.start();
 		}
 	} catch (exception& e) {
-		printf("error: %s\n", e.what());
+		if (strequ(e.what(), "Not Found")) {
+			cerr << "Invalid token." << endl;
+			exit(1);
+		} else {
+			cerr << "error: " << e.what() << endl;
+			exit(1);
+		}
 	}
 
+	unregisterSyscalls();
 	return 0;
 }
-
