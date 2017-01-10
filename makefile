@@ -1,6 +1,6 @@
 # Makefile for Mish Bot
 
-NAME=mish-bot
+NAME=mishbot
 
 CSOURCES=main syscalls
 
@@ -10,14 +10,8 @@ LIBS=feta mish
 
 -include ../make-base/make-base.mk
 
-LIBS_FLAGS+=-lboost_system -pthread -lssl -lcrypto
+ARCHS=x86_64  # we only support x86_64 atm
 
-all: build/mishbot
+LIB_FLAGS=-lboost_system -pthread lib/libTgBot.a -lcrypto -lssl
 
-build/mishbot: $(OBJECTS)
-	@g++ $(OBJECTS)      \
-		lib/libTgBot.a   \
-		$(LIBS_FLAGS)    \
-		-o build/mishbot \
-	
-	@chmod +x build/mishbot
+-include ../make-base/make-bin.mk
