@@ -107,24 +107,26 @@ int main(int argc, char* argv[]) {
 		return 0;
 	}
 
+	String token;
 	if (options[TOKEN]) {
-		String token = options[TOKEN].arg;
+		token = options[TOKEN].arg;
 		if (token == NULL) {
 			cerr << "Missing token." << endl;
 			exit(1);
 		}
-		bot = new Bot(token);
 	} else if (options[TOKEN_ENV]) {
-		String env = getenv("TOKEN");
-		if (env == NULL) {
+		token = getenv("TOKEN");
+		if (token == NULL) {
 			cerr << "Missing TOKEN environement variable." << endl;
 			exit(1);
 		}
-		bot = new Bot(env);
 	} else {
 		cerr << "Missing either --token or --token-env option." << endl;
 		exit(1);
 	}
+
+	cout << "Using token: " << token << endl;
+	bot = new Bot(token);
 
 	registerSyscalls();
 	signal(SIGINT, [](int s) {

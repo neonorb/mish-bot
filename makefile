@@ -1,6 +1,6 @@
 # Makefile for Mish Bot
 
-NAME=mishbot
+NAME=mish-bot
 
 CSOURCES=main syscalls
 
