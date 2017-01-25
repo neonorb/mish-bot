@@ -2,7 +2,7 @@
 
 NAME=mish-bot
 
-CSOURCES=main syscalls
+CPPSOURCES=main syscalls
 
 LIBS=feta mish
 
