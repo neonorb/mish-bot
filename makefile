@@ -4,7 +4,7 @@ NAME=mish-bot
 
 CPPSOURCES=main syscalls
 
-LIBS=feta mish
+LIBS=feta mish danbo
 
 # ----
 
